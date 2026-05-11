@@ -1,7 +1,1 @@
-module.exports = {
-  dependency: {
-    platforms: {
-      android: null,
-    },
-  },
-};
+module.exports = {};

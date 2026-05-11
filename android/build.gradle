@@ -1,0 +1,20 @@
+apply plugin: "com.android.library"
+
+android {
+  namespace "com.columnar"
+  compileSdk 34
+
+  defaultConfig {
+    minSdk 21
+  }
+
+  buildFeatures {
+    prefabPublishing true
+  }
+
+  prefab {
+    "react-native-columnar" {
+      headers "../cpp"
+    }
+  }
+}

@@ -18,17 +18,33 @@ yarn add react-native-columnar
 
 **iOS** — headers are picked up automatically via CocoaPods.
 
-**Android** — add to your library's `CMakeLists.txt`:
+**Android** — In your `android/CMakeLists.txt` add:
 
 ```cmake
-set(NODE_MODULES_DIR "${CMAKE_SOURCE_DIR}/../../../node_modules")
-
-add_subdirectory(
-  ${NODE_MODULES_DIR}/react-native-columnar/android
-  ${CMAKE_BINARY_DIR}/react-native-columnar
-)
+if(NOT TARGET react-native-columnar)
+  add_subdirectory(
+    ${NODE_MODULES_DIR}/react-native-columnar/android
+    ${CMAKE_BINARY_DIR}/react-native-columnar
+  )
+endif()
 
 target_link_libraries(${YOUR_LIBRARY_NAME} react-native-columnar)
+```
+
+`NODE_MODULES_DIR` must be passed from `build.gradle` (any JSI library already does this):
+
+```groovy
+externalNativeBuild {
+  cmake {
+    arguments "-DNODE_MODULES_DIR=${nodeModules}"
+  }
+}
+```
+
+Then in your C++ files:
+
+```cpp
+#include "react-native-columnar.h"
 ```
 
 ---
