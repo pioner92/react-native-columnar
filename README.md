@@ -1,6 +1,4 @@
-<div align="center">
-  <img src="./assets/img.webp" width="360" alt="react-native-columnar" />
-</div>
+<img src="./assets/img.webp" alt="react-native-columnar" />
 
 # react-native-columnar
 
