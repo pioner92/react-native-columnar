@@ -106,21 +106,23 @@ Generates `UserSchema` with `columnCount`, `byteSize()`, and a `Columns` struct 
 ### 2. Write and return an ArrayBuffer
 
 ```cpp
+using namespace rn_columnar;
+
 jsi::Value getUsers(jsi::Runtime& rt, const jsi::Value*, const jsi::Value* args, size_t) {
   const uint32_t rows = static_cast<uint32_t>(args[0].asNumber());
 
-  rn_columnar::ColumnarWriterBuilder<UserSchema> writer(rows);
-  auto cols = UserSchema::createColumns(writer);
+  ColumnarWriterBuilder<UserSchema> builder(rows);
+  auto cols = UserSchema::createColumns(builder);
 
   for (uint32_t i = 0; i < rows; ++i) {
-    cols.id[i]        = getUser(i).id;
-    cols.status[i]    = getUser(i).status;
-    cols.isActive[i]  = getUser(i).isActive;
-    cols.createdAt[i] = getUser(i).createdAt;
-    cols.updatedAt[i] = getUser(i).updatedAt;
+    cols.id[i]        = dbRow[i].id;
+    cols.status[i]    = dbRow[i].status;
+    cols.isActive[i]  = dbRow[i].isActive;
+    cols.createdAt[i] = dbRow[i].createdAt;
+    cols.updatedAt[i] = dbRow[i].updatedAt;
   }
 
-  return writer.toArrayBuffer(rt); // zero-copy move into JSI
+  return builder.toArrayBuffer(rt); // zero-copy move into JSI
 }
 ```
 
