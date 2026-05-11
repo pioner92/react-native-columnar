@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="./assets/img.webp" width="360" alt="react-native-columnar" />
+</div>
+
 # react-native-columnar
 
 A utility for high-performance data transport from JSI C++ to JavaScript.
