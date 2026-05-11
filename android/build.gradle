@@ -15,6 +15,7 @@ android {
   prefab {
     "react-native-columnar" {
       headers "../cpp"
+      headerOnly true
     }
   }
 }

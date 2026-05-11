@@ -65,7 +65,44 @@ yarn add react-native-columnar
 
 **iOS** — headers are picked up automatically via CocoaPods.
 
-**Android** — In your `android/CMakeLists.txt` add:
+**Android — inside an app project**
+
+Autolinking registers the package automatically. Enable Prefab in your `android/app/build.gradle`:
+
+```groovy
+android {
+  buildFeatures {
+    prefab true
+  }
+}
+```
+
+Then in your `CMakeLists.txt`:
+
+```cmake
+find_package(react-native-columnar REQUIRED CONFIG)
+
+target_link_libraries(
+  ${YOUR_LIBRARY_NAME}
+  react-native-columnar::react-native-columnar
+)
+```
+
+**Android — inside a standalone library**
+
+Autolinking does not run in library projects. Use `add_subdirectory` instead — it resolves headers directly from `node_modules` without needing a Gradle dependency.
+
+Make sure `NODE_MODULES_DIR` is passed from your `build.gradle` (any JSI library already does this):
+
+```groovy
+externalNativeBuild {
+  cmake {
+    arguments "-DNODE_MODULES_DIR=${nodeModules}"
+  }
+}
+```
+
+Then in your `CMakeLists.txt`:
 
 ```cmake
 if(NOT TARGET react-native-columnar)
@@ -76,16 +113,6 @@ if(NOT TARGET react-native-columnar)
 endif()
 
 target_link_libraries(${YOUR_LIBRARY_NAME} react-native-columnar)
-```
-
-`NODE_MODULES_DIR` must be passed from `build.gradle` (any JSI library already does this):
-
-```groovy
-externalNativeBuild {
-  cmake {
-    arguments "-DNODE_MODULES_DIR=${nodeModules}"
-  }
-}
 ```
 
 Then in your C++ files:
@@ -260,11 +287,26 @@ with your own conventions, such as enum ids, offsets, masks, or sentinel values.
 
 Make sure the package is added to your native build and linked to your JSI library.
 
-On Android, check that `react-native-columnar/android` is added via `add_subdirectory`
-and that your native target links against `react-native-columnar`:
+On Android, check that Prefab is enabled in the Gradle module that builds your
+native target:
+
+```groovy
+android {
+  buildFeatures {
+    prefab true
+  }
+}
+```
+
+Then make sure CMake finds and links the Prefab package:
 
 ```cmake
-target_link_libraries(${YOUR_LIBRARY_NAME} react-native-columnar)
+find_package(react-native-columnar REQUIRED CONFIG)
+
+target_link_libraries(
+  ${YOUR_LIBRARY_NAME}
+  react-native-columnar::react-native-columnar
+)
 ```
 
 On iOS, make sure CocoaPods has been installed after adding the package:
