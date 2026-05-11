@@ -2,11 +2,56 @@
 
 # react-native-columnar
 
-A utility for high-performance data transport from JSI C++ to JavaScript.
+High-performance columnar `ArrayBuffer` transport from JSI C++ to JavaScript.
 
-JSI native modules typically return data as an array of objects — one JS object per row, with a key for every field. This works fine for small amounts of data, but becomes slow at scale: the JS engine has to allocate thousands of objects, box every value, and put pressure on the GC.
+JSI modules often return large datasets as arrays of objects. That is easy to use, but expensive at scale: every row becomes a JS object, every value is boxed, and the result puts pressure on the GC.
 
-`react-native-columnar` replaces the array of objects with a single binary `ArrayBuffer` in columnar layout. The C++ side writes all values directly into a pre-allocated buffer, passes it to JS via JSI with zero copies, and the JS side reads it through typed array views (`Int32Array`, `Float64Array`, etc.) over the same memory — no allocation, no parsing, no overhead.
+`react-native-columnar` writes fixed-width native values into one binary columnar buffer and exposes it to JS as typed array views (`Int32Array`, `Float64Array`, etc.). No per-row objects, no parsing, and no payload copy.
+
+---
+
+## Best use cases
+
+- SQLite result sets
+- Frame processor outputs
+- Sensor streams
+- Analytics events
+- Game / physics data
+- Large JSI payloads
+- Realtime charts
+
+---
+
+## Benchmark
+
+**Test:** 10 000 iterations — each call transfers N rows (5 columns) from C++ to JS and reads one row.
+
+```
+Schema: id (int32) | status (uint8) | isActive (uint8) | createdAt (double) | updatedAt (double)
+Iterations: 10 000
+```
+
+| Rows | Array of objects | react-native-columnar | Speedup  |
+|------|------------------|-----------------------|----------|
+| 100  | ~418.81 ms       | **~14.96 ms**         | **27×**  |
+| 500  | ~2079.81 ms      | **~22.06 ms**         | **94×**  |
+| 1000 | ~4360.11 ms      | **~35.89 ms**         | **121×** |
+| 2000 | ~9444.47 ms      | **~45.39 ms**         | **208×** |
+
+**Array of objects** — each call allocates a JS array of objects with 5 keys each, boxes every value, and puts pressure on the GC — multiplied across 10 000 iterations.
+
+**react-native-columnar** — one binary buffer is allocated in C++, all rows are written in a single loop, and the buffer pointer is handed to the JS engine as an `ArrayBuffer`. The JS side creates five typed array views (`Int32Array`, `Uint8Array`, `Float64Array`) over the same memory — **zero copies, zero parsing, no per-row object allocation**.
+
+> Measured on iPhone 16 Pro. Results will vary by device and data shape.
+
+---
+
+## Requirements
+
+- React Native with JSI native modules
+- C++20 or newer (`std::span` is used by the C++ helper)
+- iOS via CocoaPods or Android via CMake
+- Fixed-width numeric data (`int8_t`, `uint32_t`, `double`, etc.)
 
 ---
 
@@ -70,6 +115,13 @@ The binary layout:
 [ rows: u32 | columns: u32 ][ col0 data ][ padding ][ col1 data ] ...
   ──── 8-byte header ────   ──────────── data, 8-byte aligned ───────
 ```
+
+The contract is intentionally small:
+
+- The JS schema must match the C++ schema exactly.
+- Column order and type width must be the same on both sides.
+- Each column stores one fixed-width primitive type.
+- The buffer owns the payload; JS typed arrays are views over that same memory.
 
 ---
 
@@ -164,6 +216,19 @@ const updatedAt = updatedAtColumn[rowIndex];
 
 `createBufferReader` returns zero-copy typed array views — the `ArrayBuffer` is not copied.
 
+### Reader API
+
+```ts
+createBufferReader<TSchema extends readonly ColumnType[]>(
+  buffer: ArrayBuffer,
+  schema: TSchema
+): [header: Int32Array, columns: ColumnsResult<TSchema>]
+```
+
+- `header[0]` — row count
+- `header[1]` — column count
+- `columns` — typed array views inferred from the schema order
+
 ### ColumnType mapping
 
 | `ColumnType`           | C++ type    | JS typed array    | Bytes | Align | Tip                              |
@@ -179,27 +244,58 @@ const updatedAt = updatedAtColumn[rowIndex];
 
 ---
 
-## Benchmark
+## Limitations
 
-**Test:** 10 000 iterations — each call transfers N rows (5 columns) from C++ to JS and reads one row.
+`react-native-columnar` is optimized for dense numeric payloads. It does not encode
+strings, nested objects, nullable values, or variable-length fields by itself.
 
+For those cases, keep metadata separately or encode it into fixed-width columns
+with your own conventions, such as enum ids, offsets, masks, or sentinel values.
+
+---
+
+## Troubleshooting
+
+### `react-native-columnar.h` not found
+
+Make sure the package is added to your native build and linked to your JSI library.
+
+On Android, check that `react-native-columnar/android` is added via `add_subdirectory`
+and that your native target links against `react-native-columnar`:
+
+```cmake
+target_link_libraries(${YOUR_LIBRARY_NAME} react-native-columnar)
 ```
-Schema: id (int32) | status (uint8) | isActive (uint8) | createdAt (double) | updatedAt (double)
-Iterations: 10 000
+
+On iOS, make sure CocoaPods has been installed after adding the package:
+
+```sh
+cd ios && pod install
 ```
 
-| Rows | Array of objects | react-native-columnar | Speedup  |
-|------|------------------|-----------------------|----------|
-| 100  | ~418.81 ms       | **~14.96 ms**         | **27×**  |
-| 500  | ~2079.81 ms      | **~22.06 ms**         | **94×**  |
-| 1000 | ~4360.11 ms      | **~35.89 ms**         | **121×** |
-| 2000 | ~9444.47 ms      | **~45.39 ms**         | **208×** |
+### `std::span` is not available
 
-**Array of objects** — each call allocates a JS array of objects with 5 keys each, boxes every value, and puts pressure on the GC — multiplied across 10 000 iterations.
+The C++ helper uses `std::span`, so your native target must compile with C++20 or
+newer. If your build fails with errors around `std::span`, enable C++20 for the
+target that includes `react-native-columnar.h`.
 
-**react-native-columnar** — one binary buffer is allocated in C++, all rows are written in a single loop, and the buffer pointer is handed to the JS engine as an `ArrayBuffer`. The JS side creates five typed array views (`Int32Array`, `Uint8Array`, `Float64Array`) over the same memory — **zero copies, zero parsing, zero object allocation**.
+### `RangeError` while creating typed arrays
 
-> Measured on iPhone 16 Pro. Results will vary by device and data shape.
+This usually means the JavaScript schema does not match the native schema, or the
+buffer was not created by `ColumnarWriterBuilder`.
+
+Check that:
+
+- The JS `ColumnType` list has the same order as the C++ schema.
+- Each JS type matches the exact C++ type size (`int32_t` → `ColumnType.Int32`,
+  `double` → `ColumnType.Float64`, etc.).
+- The buffer is the `ArrayBuffer` returned by `writer.toArrayBuffer(rt)`.
+
+### Values look shifted or incorrect
+
+The reader and writer must agree on both column order and type width. A single
+wrong type can shift all following columns. Start by comparing the C++ schema with
+the JS schema line by line.
 
 ---
 
