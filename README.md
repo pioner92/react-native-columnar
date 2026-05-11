@@ -2,6 +2,10 @@
 
 # react-native-columnar
 
+[![npm](https://img.shields.io/npm/v/react-native-columnar)](https://www.npmjs.com/package/react-native-columnar)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-lightgrey)]()
+
 Zero-copy columnar `ArrayBuffer` transport from JSI C++ to JavaScript.
 
 JSI modules often return datasets as arrays of objects — every row becomes a JS object, every value gets boxed, GC pressure grows. `react-native-columnar` packs all values into one binary buffer and exposes each column as a typed array view over the same memory. No objects, no parsing, no copy.
