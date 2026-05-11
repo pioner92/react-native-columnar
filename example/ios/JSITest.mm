@@ -14,7 +14,7 @@
 #import "React/RCTBridgeModule.h"
 #import "jsi/jsi.h"
 #include "react/bridging/Bridging.h"
-#include <react-native-columnar/react-native-columnar.h>
+#include "react-native-columnar.h"
 
 #define MY_COLUMNS(X) \
   X(int32_t, id)        \
@@ -92,7 +92,7 @@ void init_module(jsi::Runtime* runtime) {
                                                              [](jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
                                                                 size_t count) {
                                                                   
-                                                                  constexpr const uint32_t rows = 500;
+                                                                  constexpr const uint32_t rows = 100;
                                                                   
                                                                   jsi::Array array(rt, rows);
                                                                   
@@ -117,7 +117,7 @@ void init_module(jsi::Runtime* runtime) {
                                                              [](jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
                                                                 size_t count) {
                                                                   
-                                                                  constexpr uint32_t rows = 500;
+                                                                  constexpr uint32_t rows = 100;
                                                                   
                                                                   ColumnarWriterBuilder<RowsStruct> builder(rows);
                                                                   auto cols = RowsStruct::createColumns(builder);

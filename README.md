@@ -181,23 +181,23 @@ const updatedAt = updatedAtColumn[rowIndex];
 
 ## Benchmark
 
-**Test:** transfer 100 000 rows (5 columns) from C++ to JS and read every value.
+**Test:** 10 000 iterations — each call transfers N rows (5 columns) from C++ to JS and reads one row.
 
 ```
 Schema: id (int32) | status (uint8) | isActive (uint8) | createdAt (double) | updatedAt (double)
-Rows:   100 000
+Iterations: 10 000
 ```
 
-| Approach              | Time       |
-|-----------------------|------------|
-| Array of objects      | ~2079.81 ms   |
-| **react-native-columnar** | **~22.06 ms** |
+| Rows | Array of objects | react-native-columnar | Speedup  |
+|------|------------------|-----------------------|----------|
+| 100  | ~418.81 ms       | **~14.96 ms**         | **27×**  |
+| 500  | ~2079.81 ms      | **~22.06 ms**         | **94×**  |
+| 1000 | ~4360.11 ms      | **~35.89 ms**         | **121×** |
+| 2000 | ~9444.47 ms      | **~45.39 ms**         | **208×** |
 
-### **94× faster**
+**Array of objects** — each call allocates a JS array of objects with 5 keys each, boxes every value, and puts pressure on the GC — multiplied across 10 000 iterations.
 
-**Array of objects** — each row is a JS object `{ id, status, isActive, createdAt, updatedAt }`. The JS engine allocates 100 000 objects with 5 keys each, boxes every value, and puts significant pressure on the GC.
-
-**react-native-columnar** — one binary buffer is allocated in C++, all 100 000 rows are written in a single loop, and the buffer pointer is handed to the JS engine as an `ArrayBuffer`. The JS side creates five typed array views (`Int32Array`, `Uint8Array`, `Float64Array`) over the same memory — **zero copies, zero parsing, zero object allocation**.
+**react-native-columnar** — one binary buffer is allocated in C++, all rows are written in a single loop, and the buffer pointer is handed to the JS engine as an `ArrayBuffer`. The JS side creates five typed array views (`Int32Array`, `Uint8Array`, `Float64Array`) over the same memory — **zero copies, zero parsing, zero object allocation**.
 
 > Measured on iPhone 16 Pro. Results will vary by device and data shape.
 
