@@ -23,8 +23,19 @@
   X(double, createdAt)  \
   X(double, updatedAt)  \
 
-
 DECLARE_BINARY_SCHEMA(RowsStruct, MY_COLUMNS)
+
+#define ALL_TYPES_COLUMNS(X) \
+  X(int8_t,   col_int8)    \
+  X(uint8_t,  col_uint8)   \
+  X(int16_t,  col_int16)   \
+  X(uint16_t, col_uint16)  \
+  X(int32_t,  col_int32)   \
+  X(uint32_t, col_uint32)  \
+  X(float,    col_float32) \
+  X(double,   col_float64) \
+
+DECLARE_BINARY_SCHEMA(AllTypesStruct, ALL_TYPES_COLUMNS)
 
 
 using namespace facebook;
@@ -134,8 +145,31 @@ void init_module(jsi::Runtime* runtime) {
                                                                 });
   
   
+  jsi::Function testAllTypes = jsi::Function::createFromHostFunction(
+    rt, jsi::PropNameID::forAscii(rt, "testAllTypes"), 0,
+    [](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *, size_t) {
+      constexpr uint32_t rows = 10;
+
+      ColumnarWriterBuilder<AllTypesStruct> builder(rows);
+      auto cols = AllTypesStruct::createColumns(builder);
+
+      for (int i = 0; i < (int)rows; ++i) {
+        cols.col_int8[i]    = -5;
+        cols.col_uint8[i]   = 250;
+        cols.col_int16[i]   = -1000;
+        cols.col_uint16[i]  = 65000;
+        cols.col_int32[i]   = -100000;
+        cols.col_uint32[i]  = 3000000000u;
+        cols.col_float32[i] = 1.5f;
+        cols.col_float64[i] = 1234567890.0;
+      }
+
+      return builder.toArrayBuffer(rt);
+    });
+
   rt.global().setProperty(rt, "__testArrayBuffer", std::move(testArrayBuffer));
   rt.global().setProperty(rt, "__testArrayOfObject", std::move(testArrayOfObject));
+  rt.global().setProperty(rt, "__testAllTypes", std::move(testAllTypes));
 }
 @end
 
