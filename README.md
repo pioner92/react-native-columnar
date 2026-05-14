@@ -187,6 +187,36 @@ createBufferReader(buffer: ArrayBuffer, schema: readonly ColumnType[])
 
 ---
 
+## 🗂 Memory management
+
+**Buffer ownership**
+
+`ColumnarWriterBuilder` allocates a `std::vector<uint8_t>` internally. Calling `toArrayBuffer(rt)` moves the vector into a `shared_ptr<VectorBuffer>` (a `jsi::MutableBuffer` subclass) and hands it to the JSI runtime — the builder is empty after this call and must not be used again.
+
+**Lifetime on the JS side**
+
+The JS runtime (Hermes / V8) becomes the sole owner of the `ArrayBuffer`. All typed-array views returned by `createBufferReader` are zero-copy views over the same memory — each view holds an implicit reference to the `ArrayBuffer`.
+
+The underlying `std::vector` is freed when **all** JS references are gone: the original `ArrayBuffer` object and every typed-array view derived from it. No explicit `free()` or reference counting is required.
+
+```
+ColumnarWriterBuilder  →  toArrayBuffer()  →  shared_ptr<VectorBuffer>
+                                                       ↑
+                              jsi::ArrayBuffer  ───────┘   (JSI runtime owns)
+                                    ↑
+                Int32Array / Float64Array / …            (views, no copy)
+
+All JS refs dropped  →  GC  →  shared_ptr ref-count = 0  →  vector freed
+```
+
+**Practical rules**
+
+- Don't keep a typed-array view alive longer than needed — it pins the entire buffer in memory.
+- Don't call `toArrayBuffer()` more than once on the same builder.
+- Buffer size is fixed at construction time (`rows` passed to the builder constructor).
+
+---
+
 ## ⚠️ Limitations
 
 Designed for dense numeric data only. Strings, nullable values, nested objects, and variable-length fields are not supported natively — encode them as fixed-width columns using ids, offsets, or sentinel values.
