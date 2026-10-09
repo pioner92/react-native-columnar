@@ -14,18 +14,33 @@ JSI modules often return datasets as arrays of objects — every row becomes a J
 
 ## ⚡ Benchmark
 
-10 000 iterations · 5 columns · iPhone 16 Pro
+iPhone 16 Pro · iOS 26.5 · Release build · Hermes · time per JSI call (mean of 2 runs, each the median of 5 × 1 000 calls)
 
 ```
 id (int32) | status (uint8) | isActive (uint8) | createdAt (double) | updatedAt (double)
 ```
 
-| Rows | Array of objects | react-native-columnar | Speedup  |
-|------|------------------|-----------------------|----------|
-| 100  | ~418.81 ms       | **~14.96 ms**         | **27×**  |
-| 500  | ~2079.81 ms      | **~22.06 ms**         | **94×**  |
-| 1000 | ~4360.11 ms      | **~35.89 ms**         | **121×** |
-| 2000 | ~9444.47 ms      | **~45.39 ms**         | **208×** |
+Every variant returns exactly the same data (checksums are compared). The array-of-objects baseline creates property names once per call, not once per row.
+
+**Fetch and read one row** — the cost of getting data across the bridge:
+
+| Rows | Array of objects | JSON.parse | columnar | columnar, reused buffer |
+|------|------------------|------------|----------|-------------------------|
+| 100  | 17.8 µs | 73.1 µs (0.2×) | **1.6 µs** (**11×**) | **1.3 µs** (**13×**) |
+| 500  | 81.7 µs | 364 µs (0.2×) | **2.8 µs** (**29×**) | **1.8 µs** (**47×**) |
+| 1000 | 172 µs | 727 µs (0.2×) | **3.9 µs** (**44×**) | **2.3 µs** (**76×**) |
+| 2000 | 355 µs | 1,480 µs (0.2×) | **6.6 µs** (**54×**) | **3.3 µs** (**109×**) |
+
+**Fetch and read every value of every row** — transport plus a full scan in JS:
+
+| Rows | Array of objects | JSON.parse | columnar | columnar, reused buffer |
+|------|------------------|------------|----------|-------------------------|
+| 100  | 20.1 µs | 75.0 µs (0.3×) | **3.6 µs** (**6×**) | **3.2 µs** (**6×**) |
+| 500  | 99.7 µs | 379 µs (0.3×) | **11.9 µs** (**8×**) | **10.9 µs** (**9×**) |
+| 1000 | 201 µs | 764 µs (0.3×) | **22.1 µs** (**9×**) | **20.5 µs** (**10×**) |
+| 2000 | 409 µs | 1,556 µs (0.3×) | **42.7 µs** (**10×**) | **40.1 µs** (**10×**) |
+
+"Reused buffer" refills one preallocated `ArrayBuffer` with `ColumnarBufferWriter` instead of allocating a new one per call (see [Reusing a buffer](#6-reusing-a-buffer-streams-frames)). The benchmark lives in [`example/src/App.tsx`](example/src/App.tsx); launch the Release build with `-benchmarkAutorun 1` to run it unattended. Debug builds are not representative: the C++ side is compiled without optimizations there.
 
 ---
 

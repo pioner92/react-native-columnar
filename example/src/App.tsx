@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Text, View, StyleSheet, NativeModules, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import { Text, View, StyleSheet, NativeModules, TouchableOpacity, ScrollView, Platform, Settings } from 'react-native';
 import { createBufferReader, createBufferWriter, ColumnType } from 'react-native-columnar';
 
 
@@ -16,6 +16,9 @@ const ROW_COUNTS = [100, 500, 1000, 2000];
 const ITERATIONS = 1_000;
 const REPEATS = 5;
 const WARMUP = 50;
+
+const AUTORUN_KEY = 'benchmarkAutorun';
+const RESULTS_KEY = 'benchmarkResults';
 
 const scheme = [ColumnType.Int32, ColumnType.Uint8, ColumnType.Uint8, ColumnType.Float64, ColumnType.Float64] as const
 
@@ -210,23 +213,33 @@ export default function App() {
   const [benchmark, setBenchmark] = useState<BenchmarkCase[] | null>(null)
   const [typeTestResult, setTypeTestResult] = useState<TypeTestResult | null>(null)
 
-  useEffect(() => {
-    NativeModules.JSITest.install()
-  }, [])
-
-  const run = () => {
+  const run = (storeResults = false) => {
     setRunning(true)
     // Let the "Running…" label render before the synchronous benchmark blocks the JS thread.
     setTimeout(() => {
       setTypeTestResult(testAllTypes())
-      setBenchmark(runBenchmark())
+      const cases = runBenchmark()
+      setBenchmark(cases)
       setRunning(false)
+      if (storeResults) {
+        Settings.set({ [RESULTS_KEY]: JSON.stringify({ dev: __DEV__, finishedAt: new Date().toISOString(), cases }) })
+      }
     }, 50)
   }
 
+  useEffect(() => {
+    NativeModules.JSITest.install()
+    // Launch with `-benchmarkAutorun 1` to run once and store the results in NSUserDefaults (`benchmarkResults`),
+    // e.g. on a device: xcrun devicectl device process launch --device <id> columnar.example -benchmarkAutorun 1
+    if (Platform.OS === 'ios' && Settings.get(AUTORUN_KEY)) {
+      run(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <TouchableOpacity onPress={run} disabled={running}>
+      <TouchableOpacity onPress={() => run()} disabled={running}>
         <Text style={styles.button}>
           {running ? 'Running…' : 'Run benchmark'}
         </Text>
