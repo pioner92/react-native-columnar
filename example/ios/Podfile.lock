@@ -1362,7 +1362,7 @@ PODS:
     - React-RCTFBReactNativeSpec
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
-  - react-native-columnar (0.1.0):
+  - react-native-columnar (0.1.2):
     - React-jsi
   - React-NativeModulesApple (0.85.0):
     - hermes-engine
@@ -2018,7 +2018,7 @@ SPEC CHECKSUMS:
   React-logger: ee47d5f3b59a46a006c65038ed5d0b1143e37510
   React-Mapbuffer: 7f8bfbe3fcb2203db4ccb3975414af8cabe4bcd0
   React-microtasksnativemodule: ca1f33f7c98b76d923f550d39631eb4e05fa9aec
-  react-native-columnar: 71dc47fc49dce47f4685597da89990b1a6a4081d
+  react-native-columnar: 379ddcdb2fc8a7491e8d0c1a9f2cc23ec542f322
   React-NativeModulesApple: 9c1f8815ebd72cc1c75587fe588513f6dd9cb708
   React-networking: 8f75f882c6794e91e28b458b5bc1461034098c80
   React-oscompat: 5361d0fa7905ba1c3b3c5e7c464d6be9d2d85f4b

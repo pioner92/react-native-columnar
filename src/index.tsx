@@ -53,6 +53,8 @@ function alignTo(value: number, alignment: number) {
   return value + ((alignment - (value % alignment)) % alignment);
 }
 
+const DATA_START = alignTo(HEADER_SIZE * Int32Array.BYTES_PER_ELEMENT, DATA_ALIGNMENT);
+
 export function createBufferReader<
   const TSchema extends readonly ColumnType[]
 >(
@@ -64,7 +66,7 @@ export function createBufferReader<
 
   const rows = header[0]!;
 
-  let offset = alignTo(HEADER_SIZE * Int32Array.BYTES_PER_ELEMENT, DATA_ALIGNMENT);
+  let offset = DATA_START;
 
   const result = schema.map((type) => {
     offset = alignTo(offset, TYPE_ALIGN[type]);
@@ -88,4 +90,41 @@ export function createBufferReader<
     header,
     result as ColumnsResult<TSchema>,
   ] as const;
+}
+
+const MAX_ROWS = 0xffffffff; // rows are stored as uint32 in the header
+
+/**
+ * Total ArrayBuffer size in bytes (header + columns) for `rows` rows of `schema`,
+ * using the same layout as the C++ writer.
+ */
+export function getBufferSize(schema: readonly ColumnType[], rows: number): number {
+  if (!Number.isInteger(rows) || rows < 0 || rows > MAX_ROWS) {
+    throw new RangeError(`Invalid row count: ${rows}`);
+  }
+  let offset = DATA_START;
+  for (const type of schema) {
+    offset = alignTo(offset, TYPE_ALIGN[type]);
+    offset += rows * TYPE_SIZE[type];
+  }
+  return offset;
+}
+
+/**
+ * Allocates a buffer in the format the C++ writer produces and returns writable column views.
+ * Use it to mock native modules in tests, or to preallocate a buffer that native code refills
+ * in place with `ColumnarBufferWriter`.
+ */
+export function createBufferWriter<
+  const TSchema extends readonly ColumnType[]
+>(
+  schema: TSchema,
+  rows: number
+): { buffer: ArrayBuffer; columns: ColumnsResult<TSchema> } {
+  const buffer = new ArrayBuffer(getBufferSize(schema, rows));
+  const header = new Uint32Array(buffer, 0, HEADER_SIZE);
+  header[0] = rows;
+  header[1] = schema.length;
+  const [, columns] = createBufferReader(buffer, schema);
+  return { buffer, columns };
 }

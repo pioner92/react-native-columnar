@@ -88,7 +88,24 @@ To fix formatting errors, run the following:
 yarn lint --fix
 ```
 
+### On-device tests (react-native-harness)
 
+The C++ writer and the JS reader are tested together inside the example app with [React Native Harness](https://react-native-harness.dev). Tests live in `example/__tests__/*.harness.ts`; the native side they call is `installTestBindings` in `example/ios/JSITest.mm`.
+
+1. Build and install the debug example app on the simulator you want to use (`yarn example ios --udid <UDID>`).
+2. Run the tests (Harness starts its own Metro):
+
+```sh
+yarn example test:harness
+```
+
+By default Harness uses the `iPhone 17 Pro Max` simulator on iOS 26.5 and Metro port 8081. Override them per machine with environment variables, for example to run on a dedicated simulator while another Metro occupies 8081:
+
+```sh
+HARNESS_IOS_SIMULATOR="Columnar 17 Pro Max" HARNESS_IOS_VERSION=26.5 HARNESS_METRO_PORT=8092 yarn example test:harness
+```
+
+Pass a file name to run a single suite, e.g. `yarn example test:harness resize`. After changing `cpp/` or `JSITest.mm`, rebuild the app before running the tests; JS-only changes don't need a rebuild.
 
 ### Publishing to npm
 

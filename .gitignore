@@ -87,3 +87,6 @@ nitrogen/
 
 #Logs 
 logs/
+
+# React Native Harness cache
+.harness/

@@ -1,63 +1,124 @@
 import { useEffect, useState } from 'react';
-import { Text, View, StyleSheet, NativeModules, TouchableOpacity } from 'react-native';
-import { createBufferReader, ColumnType } from 'react-native-columnar';
+import { Text, View, StyleSheet, NativeModules, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import { createBufferReader, createBufferWriter, ColumnType } from 'react-native-columnar';
 
 
-type Row = {
-  id: number;
-  status: boolean;
-  isActive: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
+// JSI function types: ./globals.d.ts
+type Row = BenchmarkRow;
 
-declare global {
-  function __testArrayOfObject(): Array<Row>
-  function __testArrayBuffer(): ArrayBuffer;
-  function __testAllTypes(): ArrayBuffer;
-}
+// ============================================================
+// Benchmark
+// ============================================================
+// Every variant returns the same data from native code. Each scenario returns a checksum,
+// which is compared across variants (catches unfair or broken variants) and keeps the reads alive.
 
-const ITERATIONS = 10_000;
-
-const testArrayOfObject = () => {
-  const start = performance.now()
-
-  for (let i = 0; i < ITERATIONS; i++) {
-
-
-    const array = __testArrayOfObject()
-
-    const rowIndex = 5;
-
-    // @ts-ignore
-    const { id, status, isActive, createdAt, updatedAt } = array[rowIndex]
-  }
-
-  return performance.now() - start
-}
+const ROW_COUNTS = [100, 500, 1000, 2000];
+const ITERATIONS = 1_000;
+const REPEATS = 5;
+const WARMUP = 50;
 
 const scheme = [ColumnType.Int32, ColumnType.Uint8, ColumnType.Uint8, ColumnType.Float64, ColumnType.Float64] as const
 
-const testArrayBuffer = () => {
-  const start = performance.now()
+type Scenario = 'one row' | 'full scan';
 
-  for (let i = 0; i < ITERATIONS; i++) {
-    const buffer = __testArrayBuffer()
+const sumObject = (r: Row) => r.id + r.status + r.isActive + r.createdAt + r.updatedAt;
 
-    const [header, columns] = createBufferReader(buffer, scheme)
-    const [idColumn, statusColumn, isActiveColumn, createdAtColumn, updatedAtColumn] = columns
-
-    const rowIndex = 5;
-
-    const id = idColumn[rowIndex]
-    const status = statusColumn[rowIndex]
-    const isActive = isActiveColumn[rowIndex]
-    const createdAt = createdAtColumn[rowIndex]
-    const updatedAt = updatedAtColumn[rowIndex]
+const readObjects = (array: Row[], rows: number, scenario: Scenario) => {
+  if (scenario === 'one row') {
+    return sumObject(array[rows >> 1]!);
   }
+  let sum = 0;
+  for (let i = 0; i < rows; i++) {
+    sum += sumObject(array[i]!);
+  }
+  return sum;
+};
 
-  return performance.now() - start
-}
+const readColumns = (buffer: ArrayBuffer, rows: number, scenario: Scenario) => {
+  const [, [id, status, isActive, createdAt, updatedAt]] = createBufferReader(buffer, scheme);
+  const row = (i: number) => id[i]! + status[i]! + isActive[i]! + createdAt[i]! + updatedAt[i]!;
+  if (scenario === 'one row') {
+    return row(rows >> 1);
+  }
+  let sum = 0;
+  for (let i = 0; i < rows; i++) {
+    sum += row(i);
+  }
+  return sum;
+};
+
+type Variant = {
+  name: string;
+  prepare?: (rows: number) => void;
+  run: (rows: number, scenario: Scenario) => number;
+};
+
+let reusedBuffer: ArrayBuffer | null = null;
+
+const VARIANTS: Variant[] = [
+  {
+    name: 'Array of objects',
+    run: (rows, scenario) => readObjects(__testArrayOfObject(rows), rows, scenario),
+  },
+  {
+    name: 'JSON.parse',
+    run: (rows, scenario) => readObjects(JSON.parse(__testJSON(rows)), rows, scenario),
+  },
+  {
+    name: 'columnar',
+    run: (rows, scenario) => readColumns(__testArrayBuffer(rows), rows, scenario),
+  },
+  {
+    name: 'columnar, reused buffer',
+    prepare: (rows) => { reusedBuffer = createBufferWriter(scheme, rows).buffer; },
+    run: (rows, scenario) => {
+      __testFillBuffer(reusedBuffer!, rows);
+      return readColumns(reusedBuffer!, rows, scenario);
+    },
+  },
+];
+
+type VariantResult = { name: string; usPerCall: number; checksum: number };
+type BenchmarkCase = { rows: number; scenario: Scenario; results: VariantResult[]; checksumsMatch: boolean };
+
+const median = (values: number[]) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[sorted.length >> 1]!;
+};
+
+const measure = (variant: Variant, rows: number, scenario: Scenario): VariantResult => {
+  variant.prepare?.(rows);
+  let checksum = 0;
+  for (let i = 0; i < WARMUP; i++) {
+    checksum = variant.run(rows, scenario);
+  }
+  const times: number[] = [];
+  for (let r = 0; r < REPEATS; r++) {
+    const start = performance.now();
+    for (let i = 0; i < ITERATIONS; i++) {
+      checksum = variant.run(rows, scenario);
+    }
+    times.push(performance.now() - start);
+  }
+  return { name: variant.name, usPerCall: (median(times) * 1000) / ITERATIONS, checksum };
+};
+
+const runBenchmark = (): BenchmarkCase[] => {
+  const cases: BenchmarkCase[] = [];
+  for (const scenario of ['one row', 'full scan'] as const) {
+    for (const rows of ROW_COUNTS) {
+      const results = VARIANTS.map((variant) => measure(variant, rows, scenario));
+      const checksumsMatch = results.every((r) => r.checksum === results[0]!.checksum);
+      cases.push({ rows, scenario, results, checksumsMatch });
+      console.log(`[benchmark] ${scenario}, ${rows} rows`, results);
+    }
+  }
+  return cases;
+};
+
+// ============================================================
+// Type round-trip test
+// ============================================================
 
 const ALL_TYPES_ROWS = 10;
 
@@ -143,30 +204,10 @@ const testAllTypes = (): TypeTestResult => {
   return { passed: checks.length - errors.length, failed: errors.length, errors };
 };
 
-const AVERAGE = 5;
-
-const logData = () => {
-  for (let i = 0; i < 10; i++) {
-    const buffer = __testArrayBuffer()
-
-    const [header, columns] = createBufferReader(buffer, scheme)
-    const [idColumn, statusColumn, isActiveColumn, createdAtColumn, updatedAtColumn] = columns
-
-    const id = idColumn[i]
-    const status = statusColumn[i]
-    const isActive = isActiveColumn[i]
-    const createdAt = createdAtColumn[i]
-    const updatedAt = updatedAtColumn[i]
-    console.log({ header, id, status, isActive, createdAt, updatedAt })
-  }
-}
-
 export default function App() {
 
-  const [benchmarkResult, setBenchmarkResult] = useState<{
-    arrayOfObject: number,
-    arrayBuffer: number,
-  } | null>(null)
+  const [running, setRunning] = useState(false)
+  const [benchmark, setBenchmark] = useState<BenchmarkCase[] | null>(null)
   const [typeTestResult, setTypeTestResult] = useState<TypeTestResult | null>(null)
 
   useEffect(() => {
@@ -174,56 +215,22 @@ export default function App() {
   }, [])
 
   const run = () => {
-
-    //warm up
-    __testArrayBuffer()
-    __testArrayOfObject()
-
-    const result = {
-      arrayOfObject: 0,
-      arrayBuffer: 0,
-    }
-
-
-    for (let i = 0; i < AVERAGE; i++) {
-      result.arrayOfObject += testArrayOfObject()
-      result.arrayBuffer += testArrayBuffer()
-    }
-    setBenchmarkResult({
-      arrayOfObject: result.arrayOfObject / AVERAGE,
-      arrayBuffer: result.arrayBuffer / AVERAGE,
-    })
-
-
-    setTypeTestResult(testAllTypes())
-
-    logData()
-
-    console.log(`Average time: ArrayBuffer ${result.arrayBuffer / AVERAGE} ms`)
-    console.log(`Average time: ArrayOfObject ${result.arrayOfObject / AVERAGE} ms`)
+    setRunning(true)
+    // Let the "Running…" label render before the synchronous benchmark blocks the JS thread.
+    setTimeout(() => {
+      setTypeTestResult(testAllTypes())
+      setBenchmark(runBenchmark())
+      setRunning(false)
+    }, 50)
   }
 
-
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={run}>
-        <Text>
-          Run benchmark
+    <ScrollView contentContainerStyle={styles.container}>
+      <TouchableOpacity onPress={run} disabled={running}>
+        <Text style={styles.button}>
+          {running ? 'Running…' : 'Run benchmark'}
         </Text>
       </TouchableOpacity>
-      {benchmarkResult && (
-        <>
-          <Text>
-            {`react-native-columnar: ${benchmarkResult.arrayBuffer.toFixed(2)} ms`}
-          </Text>
-          <Text>
-            {`Array of object: ${benchmarkResult.arrayOfObject.toFixed(2)} ms`}
-          </Text>
-          <Text>
-            Faster by: {(benchmarkResult.arrayOfObject / benchmarkResult.arrayBuffer).toFixed(2)}x
-          </Text>
-        </>
-      )}
       {typeTestResult && (
         <>
           <Text style={typeTestResult.failed === 0 ? styles.pass : styles.fail}>
@@ -236,16 +243,48 @@ export default function App() {
           ))}
         </>
       )}
-    </View>
+      {benchmark?.map(({ rows, scenario, results, checksumsMatch }) => {
+        const baseline = results[0]!.usPerCall;
+        return (
+          <View key={`${scenario}-${rows}`} style={styles.case}>
+            <Text style={styles.caseTitle}>{`${scenario} · ${rows} rows`}</Text>
+            {results.map((r) => (
+              <Text key={r.name} style={styles.mono}>
+                {`${r.name.padEnd(24)} ${r.usPerCall.toFixed(1).padStart(8)} µs  ${(baseline / r.usPerCall).toFixed(1).padStart(6)}×`}
+              </Text>
+            ))}
+            {!checksumsMatch && <Text style={styles.fail}>Checksums differ between variants!</Text>}
+          </View>
+        );
+      })}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 16,
     backgroundColor: '#fff',
+  },
+  button: {
+    fontSize: 18,
+    marginBottom: 16,
+  },
+  case: {
+    alignSelf: 'stretch',
+    marginTop: 12,
+  },
+  caseTitle: {
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  mono: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 11,
   },
   pass: {
     color: 'green',
